@@ -17,10 +17,9 @@ def _fetch_profile(user_id: str) -> dict | None:
             .table("profiles")
             .select("*")
             .eq("id", user_id)
-            .single()
             .execute()
         )
-        return result.data
+        return result.data[0] if result.data else None
     except Exception:
         return None
 
@@ -103,10 +102,14 @@ async def me(current_user: User = Depends(get_current_user)):
     profile = _fetch_profile(str(current_user.id))
 
     if profile is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Profile not found.",
-        )
+        # Auto-create a minimal profile so authenticated users are never rejected
+        try:
+            get_supabase_client().table("profiles").upsert(
+                {"id": str(current_user.id)}
+            ).execute()
+        except Exception:
+            pass
+        profile = {"id": str(current_user.id), "full_name": None, "location": None, "bio": None}
 
     return UserOut(
         id=profile["id"],
